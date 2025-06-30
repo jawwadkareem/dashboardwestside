@@ -1,5 +1,5 @@
-import React, { useState, Dispatch, SetStateAction } from 'react';
-import { Plus, Trash2, Upload, Edit, X } from 'lucide-react';
+import React, { useState, useEffect, Dispatch, SetStateAction } from 'react';
+import { Plus, Trash2, Upload, Edit, X, ImageOff } from 'lucide-react';
 import { Repair, CreateRepairDto, UpdateRepairDto, User } from '../../types';
 import { apiService } from '../../services/api';
 import { Toast } from '../common/Toast';
@@ -14,9 +14,43 @@ interface RepairManagementProps {
 
 export const RepairManagement: React.FC<RepairManagementProps> = ({ workOrderId, user, repairs, total, setRepairs }) => {
   const [loading, setLoading] = useState(false);
+  const [uploadLoading, setUploadLoading] = useState<string | null>(null);
   const [toast, setToast] = useState<{ message: string; type: 'success' | 'error' } | null>(null);
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [showUpdateModal, setShowUpdateModal] = useState<Repair | null>(null);
+  const [page, setPage] = useState(1);
+  const [limit, setLimit] = useState(20);
+  const [totalPages, setTotalPages] = useState(Math.ceil(total / limit));
+
+  useEffect(() => {
+    fetchRepairs();
+  }, [page, limit]);
+
+  useEffect(() => {
+    setTotalPages(Math.ceil(total / limit));
+  }, [total, limit]);
+
+  const fetchRepairs = async () => {
+    if (!user || !user._id) {
+      setToast({ message: 'User not authenticated', type: 'error' });
+      return;
+    }
+    try {
+      setLoading(true);
+      const response = await apiService.getWorkOrderRepairs(workOrderId, user._id, page, limit);
+      setRepairs(response.repairs.map((repair: Repair) => ({
+        ...repair,
+        beforeImageUrl: repair.beforeImageUrl || repair.beforeImageUri,
+        afterImageUrl: repair.afterImageUrl || repair.afterImageUri,
+      })));
+      setTotalPages(Math.ceil(response.total / limit));
+    } catch (error: any) {
+      console.error('Error fetching repairs:', error);
+      setToast({ message: error.message || 'Failed to fetch repairs', type: 'error' });
+    } finally {
+      setLoading(false);
+    }
+  };
 
   const handleCreateRepair = async (dto: CreateRepairDto, beforeImage?: File, afterImage?: File) => {
     if (!user || !user._id) {
@@ -25,10 +59,15 @@ export const RepairManagement: React.FC<RepairManagementProps> = ({ workOrderId,
     }
     try {
       const repair = await apiService.createRepair({ ...dto, workOrder: workOrderId }, beforeImage, afterImage);
-      setRepairs((prev) => [...prev, repair]);
+      setRepairs((prev) => [...prev, {
+        ...repair,
+        beforeImageUrl: repair.beforeImageUrl || repair.beforeImageUri,
+        afterImageUrl: repair.afterImageUrl || repair.afterImageUri,
+      }]);
       setShowCreateModal(false);
       setToast({ message: 'Repair created successfully', type: 'success' });
     } catch (error: any) {
+      console.error('Error creating repair:', error);
       setToast({ message: error.message || 'Failed to create repair', type: 'error' });
     }
   };
@@ -41,11 +80,21 @@ export const RepairManagement: React.FC<RepairManagementProps> = ({ workOrderId,
     try {
       const updatedRepair = await apiService.updateRepair(repairId, user._id, dto);
       setRepairs((prev) =>
-        prev.map((r) => (r._id === updatedRepair._id ? updatedRepair : r))
+        prev.map((r) =>
+          r._id === updatedRepair._id
+            ? {
+                ...r,
+                ...updatedRepair,
+                beforeImageUrl: updatedRepair.beforeImageUrl || updatedRepair.beforeImageUri || r.beforeImageUri,
+                afterImageUrl: updatedRepair.afterImageUrl || updatedRepair.afterImageUri || r.afterImageUri,
+              }
+            : r
+        )
       );
       setShowUpdateModal(null);
       setToast({ message: 'Repair updated successfully', type: 'success' });
     } catch (error: any) {
+      console.error('Error updating repair:', error);
       setToast({ message: error.message || 'Failed to update repair', type: 'error' });
     }
   };
@@ -56,17 +105,31 @@ export const RepairManagement: React.FC<RepairManagementProps> = ({ workOrderId,
       return;
     }
     try {
-      const url = await apiService.uploadRepairImage(repairId, user._id, file, type);
-      setRepairs((prev) =>
-        prev.map((r) =>
-          r._id === repairId
-            ? { ...r, [type === 'before' ? 'beforeImageUrl' : 'afterImageUrl']: url }
+      setUploadLoading(repairId + type);
+      const uri = await apiService.uploadRepairImage(repairId, user._id, file, type);
+      console.log(`handleUploadImage: Uploaded ${type} image for repair ${repairId}:`, uri);
+      const updatedRepair = await apiService.getSingleRepairById(repairId);
+      console.log(`handleUploadImage: Refetched repair ${repairId}:`, updatedRepair);
+      setRepairs((prev) => {
+        const newRepairs = prev.map((r) =>
+          r._id === updatedRepair._id
+            ? {
+                ...r,
+                ...updatedRepair,
+                beforeImageUrl: updatedRepair.beforeImageUrl || updatedRepair.beforeImageUri || r.beforeImageUri,
+                afterImageUrl: updatedRepair.afterImageUrl || updatedRepair.afterImageUri || r.afterImageUri,
+              }
             : r
-        )
-      );
+        );
+        console.log(`handleUploadImage: Updated repairs state:`, newRepairs);
+        return [...newRepairs];
+      });
       setToast({ message: `${type.charAt(0).toUpperCase() + type.slice(1)} image uploaded successfully`, type: 'success' });
     } catch (error: any) {
+      console.error(`Error uploading ${type} image:`, error);
       setToast({ message: error.message || `Failed to upload ${type} image`, type: 'error' });
+    } finally {
+      setUploadLoading(null);
     }
   };
 
@@ -80,13 +143,24 @@ export const RepairManagement: React.FC<RepairManagementProps> = ({ workOrderId,
       setRepairs((prev) =>
         prev.map((r) =>
           r._id === repairId
-            ? { ...r, [type === 'before' ? 'beforeImageUrl' : 'afterImageUrl']: undefined }
+            ? {
+                ...r,
+                [type === 'before' ? 'beforeImageUrl' : 'afterImageUrl']: undefined,
+                [type === 'before' ? 'beforeImageUri' : 'afterImageUri']: undefined,
+              }
             : r
         )
       );
       setToast({ message: `${type.charAt(0).toUpperCase() + type.slice(1)} image deleted successfully`, type: 'success' });
     } catch (error: any) {
+      console.error(`Error deleting ${type} image:`, error);
       setToast({ message: error.message || `Failed to delete ${type} image`, type: 'error' });
+    }
+  };
+
+  const handlePageChange = (newPage: number) => {
+    if (newPage >= 1 && newPage <= totalPages) {
+      setPage(newPage);
     }
   };
 
@@ -97,87 +171,234 @@ export const RepairManagement: React.FC<RepairManagementProps> = ({ workOrderId,
       ) : repairs.length === 0 ? (
         <p className="text-sm sm:text-base">No repairs found</p>
       ) : (
-        <ul className="list-disc pl-4 sm:pl-5 text-sm sm:text-base">
-          {repairs.map((repair) => (
-            <li key={repair._id} className="mb-2">
-              <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center bg-gray-50 p-2 rounded">
-                <div className="space-y-1">
-                  <p><strong>Mechanic:</strong> {repair.mechanicName}</p>
-                  <p><strong>Part:</strong> {repair.partName}</p>
-                  <p><strong>Price:</strong> ${repair.price}</p>
-                  <p><strong>Finish Date:</strong> {new Date(repair.finishDate).toLocaleDateString()}</p>
-                  <p><strong>Notes:</strong> {repair.notes}</p>
-                  <p><strong>Submitted:</strong> {repair.submitted ? 'Yes' : 'No'}</p>
-                  {repair.beforeImageUrl && (
-                    <p>
-                      <strong>Before Image:</strong>{' '}
-                      <a href={repair.beforeImageUrl} target="_blank" rel="noopener noreferrer" className="text-blue-600">
-                        View
-                      </a>
-                      {!repair.submitted && (
-                        <button
-                          onClick={() => handleDeleteImage(repair._id, 'before')}
-                          className="ml-2 text-red-600 hover:text-red-800"
-                          title="Delete Before Image"
-                        >
-                          <Trash2 className="h-4 w-4 inline" />
-                        </button>
-                      )}
-                    </p>
-                  )}
-                  {repair.afterImageUrl && (
-                    <p>
-                      <strong>After Image:</strong>{' '}
-                      <a href={repair.afterImageUrl} target="_blank" rel="noopener noreferrer" className="text-blue-600">
-                        View
-                      </a>
-                      {!repair.submitted && (
-                        <button
-                          onClick={() => handleDeleteImage(repair._id, 'after')}
-                          className="ml-2 text-red-600 hover:text-red-800"
-                          title="Delete After Image"
-                        >
-                          <Trash2 className="h-4 w-4 inline" />
-                        </button>
-                      )}
-                    </p>
-                  )}
-                </div>
-                {!repair.submitted && (
-                  <div className="flex space-x-2 mt-2 sm:mt-0">
-                    <button
-                      onClick={() => setShowUpdateModal(repair)}
-                      className="text-blue-600 hover:text-blue-800"
-                      title="Edit Repair"
-                    >
-                      <Edit className="h-4 w-4" />
-                    </button>
-                    <label className="flex items-center text-blue-600 hover:text-blue-800 cursor-pointer">
-                      <Upload className="h-4 w-4 mr-1" />
-                      Before
-                      <input
-                        type="file"
-                        accept="image/*"
-                        className="hidden"
-                        onChange={(e) => e.target.files && handleUploadImage(repair._id, 'before', e.target.files[0])}
-                      />
-                    </label>
-                    <label className="flex items-center text-blue-600 hover:text-blue-800 cursor-pointer">
-                      <Upload className="h-4 w-4 mr-1" />
-                      After
-                      <input
-                        type="file"
-                        accept="image/*"
-                        className="hidden"
-                        onChange={(e) => e.target.files && handleUploadImage(repair._id, 'after', e.target.files[0])}
-                      />
-                    </label>
+        <>
+          <ul className="list-disc pl-4 sm:pl-5 text-sm sm:text-base">
+            {repairs.map((repair) => (
+              <li key={repair._id} className="mb-4">
+                <div className="bg-gray-50 p-4 rounded-lg">
+                  <div className="flex flex-col sm:flex-row sm:space-x-4">
+                    <div className="space-y-2">
+                      <p><strong>Mechanic:</strong> {repair.mechanicName}</p>
+                      <p><strong>Part:</strong> {repair.partName}</p>
+                      <p><strong>Price:</strong> ${repair.price}</p>
+                      <p><strong>Finish Date:</strong> {new Date(repair.finishDate).toLocaleDateString()}</p>
+                      <p><strong>Notes:</strong> {repair.notes}</p>
+                      <p><strong>Submitted:</strong> {repair.submitted ? 'Yes' : 'No'}</p>
+                      <div className="flex flex-col sm:flex-row sm:space-x-4">
+                        <div>
+                          <p><strong>Before Image:</strong></p>
+                          {repair.beforeImageUrl || repair.beforeImageUri ? (
+                            <div className="flex flex-col items-start">
+                              {uploadLoading === repair._id + 'before' ? (
+                                <span className="text-gray-500 flex items-center">
+                                  <svg className="animate-spin h-5 w-5 mr-2" viewBox="0 0 24 24">
+                                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8h8a8 8 0 01-8 8 8 8 0 01-8-8z" />
+                                  </svg>
+                                  Uploading...
+                                </span>
+                              ) : (
+                                <>
+                                  <img
+                                    src={`${repair.beforeImageUrl || repair.beforeImageUri}`}
+                                    alt="Before Repair"
+                                    className="max-w-[150px] max-h-[150px] rounded-md mt-1 object-contain"
+                                    onError={(e) => {
+                                      console.error(`Image load error for ${repair._id} (before):`, {
+                                        url: repair.beforeImageUrl || repair.beforeImageUri,
+                                        error: (e as any).target?.error || 'Unknown error'
+                                      });
+                                      e.currentTarget.style.display = 'none';
+                                      const nextSibling = e.currentTarget.nextElementSibling as HTMLElement | null;
+                                      if (nextSibling) {
+                                        nextSibling.style.display = 'flex';
+                                      }
+                                    }}
+                                  />
+                                  <span className="hidden text-gray-500 items-center mt-1">
+                                    <ImageOff className="h-4 w-4 inline mr-1" />
+                                    Failed to load image
+                                  </span>
+                                </>
+                              )}
+                              <div className="flex space-x-2 mt-2">
+                                <label className="flex items-center text-blue-600 hover:text-blue-800 cursor-pointer">
+                                  <Upload className="h-4 w-4 mr-1" />
+                                  Update
+                                  <input
+                                    type="file"
+                                    accept="image/*"
+                                    className="hidden"
+                                    disabled={uploadLoading === repair._id + 'before'}
+                                    onChange={(e) => e.target.files && handleUploadImage(repair._id, 'before', e.target.files[0])}
+                                  />
+                                </label>
+                                <button
+                                  onClick={() => handleDeleteImage(repair._id, 'before')}
+                                  className="flex items-center text-red-600 hover:text-red-800"
+                                  title="Delete Before Image"
+                                >
+                                  <Trash2 className="h-4 w-4 mr-1" />
+                                  Delete
+                                </button>
+                              </div>
+                            </div>
+                          ) : (
+                            <div className="flex flex-col items-start">
+                              {uploadLoading === repair._id + 'before' ? (
+                                <span className="text-gray-500 flex items-center">
+                                  <svg className="animate-spin h-5 w-5 mr-2" viewBox="0 0 24 24">
+                                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8h8a8 8 0 01-8 8 8 8 0 01-8-8z" />
+                                  </svg>
+                                  Uploading...
+                                </span>
+                              ) : (
+                                <span className="text-gray-500 flex items-center">
+                                  <ImageOff className="h-4 w-4 inline mr-1" />
+                                  No Image
+                                </span>
+                              )}
+                              <label className="flex items-center text-blue-600 hover:text-blue-800 cursor-pointer mt-2">
+                                <Upload className="h-4 w-4 mr-1" />
+                                Update
+                                <input
+                                  type="file"
+                                  accept="image/*"
+                                  className="hidden"
+                                  disabled={uploadLoading === repair._id + 'before'}
+                                  onChange={(e) => e.target.files && handleUploadImage(repair._id, 'before', e.target.files[0])}
+                                />
+                              </label>
+                            </div>
+                          )}
+                        </div>
+                        <div>
+                          <p><strong>After Image:</strong></p>
+                          {repair.afterImageUrl || repair.afterImageUri ? (
+                            <div className="flex flex-col items-start">
+                              {uploadLoading === repair._id + 'after' ? (
+                                <span className="text-gray-500 flex items-center">
+                                  <svg className="animate-spin h-5 w-5 mr-2" viewBox="0 0 24 24">
+                                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8h8a8 8 0 01-8 8 8 8 0 01-8-8z" />
+                                  </svg>
+                                  Uploading...
+                                </span>
+                              ) : (
+                                <>
+                                  <img
+                                    src={`${repair.afterImageUrl || repair.afterImageUri}`}
+                                    alt="After Repair"
+                                    className="max-w-[150px] max-h-[150px] rounded-md mt-1 object-contain"
+                                    onError={(e) => {
+                                      console.error(`Image load error for ${repair._id} (after):`, {
+                                        url: repair.afterImageUrl || repair.afterImageUri,
+                                        error: (e as any).target?.error || 'Unknown error'
+                                      });
+                                      e.currentTarget.style.display = 'none';
+                                      const nextSibling = e.currentTarget.nextElementSibling as HTMLElement | null;
+                                      if (nextSibling) {
+                                        nextSibling.style.display = 'flex';
+                                      }
+                                    }}
+                                  />
+                                  <span className="hidden text-gray-500 items-center mt-1">
+                                    <ImageOff className="h-4 w-4 inline mr-1" />
+                                    Failed to load image
+                                  </span>
+                                </>
+                              )}
+                              <div className="flex space-x-2 mt-2">
+                                <label className="flex items-center text-blue-600 hover:text-blue-800 cursor-pointer">
+                                  <Upload className="h-4 w-4 mr-1" />
+                                  Update
+                                  <input
+                                    type="file"
+                                    accept="image/*"
+                                    className="hidden"
+                                    disabled={uploadLoading === repair._id + 'after'}
+                                    onChange={(e) => e.target.files && handleUploadImage(repair._id, 'after', e.target.files[0])}
+                                  />
+                                </label>
+                                <button
+                                  onClick={() => handleDeleteImage(repair._id, 'after')}
+                                  className="flex items-center text-red-600 hover:text-red-800"
+                                  title="Delete After Image"
+                                >
+                                  <Trash2 className="h-4 w-4 mr-1" />
+                                  Delete
+                                </button>
+                              </div>
+                            </div>
+                          ) : (
+                            <div className="flex flex-col items-start">
+                              {uploadLoading === repair._id + 'after' ? (
+                                <span className="text-gray-500 flex items-center">
+                                  <svg className="animate-spin h-5 w-5 mr-2" viewBox="0 0 24 24">
+                                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8h8a8 8 0 01-8 8 8 8 0 01-8-8z" />
+                                  </svg>
+                                  Uploading...
+                                </span>
+                              ) : (
+                                <span className="text-gray-500 flex items-center">
+                                  <ImageOff className="h-4 w-4 inline mr-1" />
+                                  No Image
+                                </span>
+                              )}
+                              <label className="flex items-center text-blue-600 hover:text-blue-800 cursor-pointer mt-2">
+                                <Upload className="h-4 w-4 mr-1" />
+                                Update
+                                <input
+                                  type="file"
+                                  accept="image/*"
+                                  className="hidden"
+                                  disabled={uploadLoading === repair._id + 'after'}
+                                  onChange={(e) => e.target.files && handleUploadImage(repair._id, 'after', e.target.files[0])}
+                                />
+                              </label>
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                    <div className="flex space-x-2 mt-4 sm:mt-0 sm:items-start">
+                      <button
+                        onClick={() => setShowUpdateModal(repair)}
+                        className="text-blue-600 hover:text-blue-800"
+                        title="Edit Repair"
+                      >
+                        <Edit className="h-4 w-4" />
+                      </button>
+                    </div>
                   </div>
-                )}
-              </div>
-            </li>
-          ))}
-        </ul>
+                </div>
+              </li>
+            ))}
+          </ul>
+          <div className="flex flex-col sm:flex-row justify-between items-center mt-4">
+            <div className="text-sm text-gray-600 mb-2 sm:mb-0">
+              Page {page} of {totalPages} (Total Repairs: {total})
+            </div>
+            <div className="flex space-x-2">
+              <button
+                onClick={() => handlePageChange(page - 1)}
+                disabled={page === 1 || loading}
+                className="px-3 py-1 text-sm text-white bg-blue-600 rounded-lg hover:bg-blue-700 disabled:bg-blue-300"
+              >
+                Previous
+              </button>
+              <button
+                onClick={() => handlePageChange(page + 1)}
+                disabled={page === totalPages || loading}
+                className="px-3 py-1 text-sm text-white bg-blue-600 rounded-lg hover:bg-blue-700 disabled:bg-blue-300"
+              >
+                Next
+              </button>
+            </div>
+          </div>
+        </>
       )}
       {user && (user.role === 'systemAdministrator' || user.role === 'shopManager') && (
         <button
@@ -244,6 +465,7 @@ const CreateRepairModal: React.FC<CreateRepairModalProps> = ({ workOrderId, onCl
     try {
       await onSuccess(formData, beforeImage || undefined, afterImage || undefined);
     } catch (error: any) {
+      console.error('Error in CreateRepairModal:', error);
       setToast({ message: error.message || 'Failed to create repair', type: 'error' });
     } finally {
       setLoading(false);
@@ -368,17 +590,19 @@ interface UpdateRepairModalProps {
 
 const UpdateRepairModal: React.FC<UpdateRepairModalProps> = ({ repair, onClose, onSuccess }) => {
   const [formData, setFormData] = useState<UpdateRepairDto>({
-    mechanicName: repair.mechanicName,
-    partName: repair.partName,
-    price: repair.price,
-    finishDate: repair.finishDate,
-    notes: repair.notes,
-    submitted: repair.submitted,
+    mechanicName: repair.mechanicName || '',
+    partName: repair.partName || '',
+    price: repair.price || 0,
+    finishDate: repair.finishDate ? new Date(repair.finishDate).toISOString().split('T')[0] : '',
+    notes: repair.notes || '',
+    submitted: repair.submitted || false,
+    beforeImageUri: repair.beforeImageUri || undefined,
+    afterImageUri: repair.afterImageUri || undefined,
   });
   const [loading, setLoading] = useState(false);
   const [toast, setToast] = useState<{ message: string; type: 'success' | 'error' } | null>(null);
 
-  const handleInputChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLInputElement>) => {
+  const handleInputChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
     const { name, value, type, checked } = e.target as HTMLInputElement;
     setFormData((prev) => ({
       ...prev,
@@ -392,6 +616,7 @@ const UpdateRepairModal: React.FC<UpdateRepairModalProps> = ({ repair, onClose, 
     try {
       await onSuccess(repair._id, formData);
     } catch (error: any) {
+      console.error('Error in UpdateRepairModal:', error);
       setToast({ message: error.message || 'Failed to update repair', type: 'error' });
     } finally {
       setLoading(false);

@@ -49,37 +49,37 @@ export const WorkOrderManagement: React.FC = () => {
     setShowAddModal(true);
   };
 
-  const handleDeleteMechanic = async (mechanicId: string) => {
-    if (!confirm('Are you sure you want to delete this mechanic? This will remove them from all work orders and archive them.')) {
+  const handleDeleteMechanic = async (workOrderId: string, mechanicId: string) => {
+    if (!confirm('Are you sure you want to remove this mechanic from the work order? They will be archived in the work order history.')) {
       return;
     }
     try {
-      const response = await apiService.deleteMechanic(mechanicId);
-      if (response.success) {
+      const response = await apiService.deleteMechanicFromWorkOrder(workOrderId, mechanicId);
+      if (response.message) {
         await fetchData();
-        setToast({ message: 'Mechanic deleted and archived successfully', type: 'success' });
+        setToast({ message: 'Mechanic removed from work order successfully', type: 'success' });
       } else {
-        setToast({ message: 'Unexpected response when deleting mechanic', type: 'error' });
+        setToast({ message: 'Unexpected response when removing mechanic', type: 'error' });
       }
     } catch (error: any) {
-      setToast({ message: error.message || 'Failed to delete mechanic', type: 'error' });
+      setToast({ message: error.message || 'Failed to remove mechanic', type: 'error' });
     }
   };
 
-  const handleDeleteManager = async (managerId: string) => {
-    if (!confirm('Are you sure you want to delete this manager? This will remove them from all work orders and archive them.')) {
+  const handleDeleteManager = async (workOrderId: string, managerId: string) => {
+    if (!confirm('Are you sure you want to remove this manager from the work order? They will be archived in the work order history.')) {
       return;
     }
     try {
-      const response = await apiService.deleteManager(managerId);
-      if (response.success) {
+      const response = await apiService.deleteManagerFromWorkOrder(workOrderId, managerId);
+      if (response.message) {
         await fetchData();
-        setToast({ message: 'Manager deleted and archived successfully', type: 'success' });
+        setToast({ message: 'Manager removed from work order successfully', type: 'success' });
       } else {
-        setToast({ message: 'Unexpected response when deleting manager', type: 'error' });
+        setToast({ message: 'Unexpected response when removing manager', type: 'error' });
       }
     } catch (error: any) {
-      setToast({ message: error.message || 'Failed to delete manager', type: 'error' });
+      setToast({ message: error.message || 'Failed to remove manager', type: 'error' });
     }
   };
 
@@ -228,9 +228,9 @@ export const WorkOrderManagement: React.FC = () => {
                             <div key={mechanic._id} className="flex items-center justify-between bg-green-50 rounded-lg p-2">
                               <span className="text-green-800 text-sm">{mechanic.name} ({mechanic.email})</span>
                               <button
-                                onClick={() => handleDeleteMechanic(mechanic._id)}
+                                onClick={() => handleDeleteMechanic(workOrder._id, mechanic._id)}
                                 className="text-red-600 hover:text-red-800 transition-colors"
-                                title="Delete mechanic"
+                                title="Remove mechanic from work order"
                               >
                                 <Trash2 className="h-4 w-4" />
                               </button>
@@ -265,9 +265,9 @@ export const WorkOrderManagement: React.FC = () => {
                             <div key={manager._id} className="flex items-center justify-between bg-blue-50 rounded-lg p-2">
                               <span className="text-blue-800 text-sm">{manager.name} ({manager.email})</span>
                               <button
-                                onClick={() => handleDeleteManager(manager._id)}
+                                onClick={() => handleDeleteManager(workOrder._id, manager._id)}
                                 className="text-red-600 hover:text-red-800 transition-colors"
-                                title="Delete manager"
+                                title="Remove manager from work order"
                               >
                                 <Trash2 className="h-4 w-4" />
                               </button>

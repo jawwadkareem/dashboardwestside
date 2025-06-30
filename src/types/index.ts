@@ -128,8 +128,10 @@ export interface Repair {
   finishDate: string;
   notes: string;
   submitted: boolean;
-  beforeImageUrl?: string;
-  afterImageUrl?: string;
+  beforeImageUri?: string; // Existing field for compatibility
+  afterImageUri?: string;  // Existing field for compatibility
+  beforeImageUrl?: string; // New field for signed URL from API
+  afterImageUrl?: string;  // New field for signed URL from API
 }
 
 export interface CreateRepairDto {

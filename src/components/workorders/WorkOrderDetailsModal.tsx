@@ -101,13 +101,13 @@ export const WorkOrderDetailsModal: React.FC<WorkOrderDetailsModalProps> = ({ wo
           </button>
         </div>
         <div className="space-y-3 sm:space-y-4">
-          <div className="flex items-center flex-wrap">
+          {/* <div className="flex items-center flex-wrap">
             <CarIcon className="h-4 w-4 sm:h-5 sm:w-5 mr-2 text-gray-500 flex-shrink-0" />
             <p className="text-sm sm:text-base">
               <strong>Car:</strong> {workOrder.car?.plate || 'N/A'} (
               {workOrder.car?.model || ''} {workOrder.car?.variant || ''}, {workOrder.car?.year || ''})
             </p>
-          </div>
+          </div> */}
           <div className="flex items-center flex-wrap">
             <User className="h-4 w-4 sm:h-5 sm:w-5 mr-2 text-gray-500 flex-shrink-0" />
             <p className="text-sm sm:text-base">
